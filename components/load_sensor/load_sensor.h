@@ -16,7 +16,10 @@ class LoadSensor : public PollingComponent, public sensor::Sensor {
   float history_[HISTORY_SIZE] = {0};
   size_t history_index_ = 0;
   bool first_run_ = true;
+  uint32_t last_active_ticks_ = 0;
+  uint32_t last_idle_ticks_ = 0;
 
+  uint32_t calculate_delta(uint32_t current, uint32_t previous);
 };
 
 }  // namespace load_sensor
