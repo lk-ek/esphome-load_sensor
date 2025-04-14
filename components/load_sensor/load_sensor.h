@@ -3,6 +3,23 @@
 #include "esphome/core/component.h"
 #include "esphome/components/sensor/sensor.h"
 
+// Platform detection
+#if defined(USE_ESP_IDF)
+  #include "freertos/FreeRTOS.h"
+  #include "freertos/task.h"
+  #define USE_FREERTOS 1
+#elif defined(ESP32)
+  #include "freertos/FreeRTOS.h"
+  #include "freertos/task.h"
+  #define USE_FREERTOS 1
+#elif defined(ESP8266)
+  #include <Arduino.h>
+  #include <ESP8266WiFi.h>
+  #define USE_FREERTOS 0
+#else
+  #error "Unsupported platform"
+#endif
+
 namespace esphome {
 namespace load_sensor {
 
@@ -38,6 +55,14 @@ class LoadSensor : public PollingComponent, public sensor::Sensor {
 
   uint32_t calculate_delta(uint32_t current, uint32_t previous);
   float calculate_average(const float *history, size_t size);
+
+  #if !USE_FREERTOS
+  uint32_t last_system_time_{0};
+  uint32_t last_cycles_{0};
+  uint32_t gather_stats_esp8266();
+  #endif
+
+  uint32_t gather_stats();
 };
 
 }  // namespace load_sensor

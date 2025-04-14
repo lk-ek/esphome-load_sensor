@@ -56,6 +56,30 @@ The load sensor works by:
         - -DconfigUSE_TRACE_FACILITY=1
   ```
 
+## Framework Support
+
+### ESP-IDF Framework
+No additional configuration needed beyond the build flags listed above.
+
+### Arduino Framework
+When using Arduino framework, add these build flags:
+```yaml
+esphome:
+  platformio_options:
+    build_flags:
+      - -DconfigUSE_TRACE_FACILITY=1
+      - -DconfigGENERATE_RUN_TIME_STATS=1
+      - -DINCLUDE_uxTaskGetStackHighWaterMark=1
+```
+
+## Platform Support
+
+### ESP32
+Uses FreeRTOS task statistics for accurate CPU load measurement.
+
+### ESP8266
+Uses a simplified load estimation based on yield() call frequency. Build flags are not required.
+
 ## Example Output
 
 The sensor provides three values similar to Linux load averages:
