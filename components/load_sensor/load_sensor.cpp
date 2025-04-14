@@ -11,14 +11,29 @@ static const char *const TAG = "load_sensor";
 
 void LoadSensor::setup() {
   first_run_ = true;
-  for (size_t i = 0; i < HISTORY_SIZE; i++) {
-    history_[i] = 0;
+  // Initialize all history buffers
+  for (size_t i = 0; i < HISTORY_1M; i++) {
+    history_1m_[i] = 0;
+  }
+  for (size_t i = 0; i < HISTORY_5M; i++) {
+    history_5m_[i] = 0;
+  }
+  for (size_t i = 0; i < HISTORY_15M; i++) {
+    history_15m_[i] = 0;
   }
 }
 
 uint32_t LoadSensor::calculate_delta(uint32_t current, uint32_t previous) {
   return (current >= previous) ? (current - previous) : 
          (UINT32_MAX - previous + current + 1);
+}
+
+float LoadSensor::calculate_average(const float *history, size_t size) {
+  float sum = 0;
+  for (size_t i = 0; i < size; i++) {
+    sum += history[i];
+  }
+  return sum / size;
 }
 
 void LoadSensor::update() {
@@ -56,19 +71,29 @@ void LoadSensor::update() {
       float instant_load = 100.0f * ((float)delta_active / (float)delta_total);
       
       if (instant_load >= 0.0f && instant_load <= 100.0f) {
-        history_[history_index_] = instant_load;
-        history_index_ = (history_index_ + 1) % HISTORY_SIZE;
+        // Update 1-minute history
+        history_1m_[history_index_1m_] = instant_load;
+        history_index_1m_ = (history_index_1m_ + 1) % HISTORY_1M;
+        
+        // Update 5-minute history
+        history_5m_[history_index_5m_] = instant_load;
+        history_index_5m_ = (history_index_5m_ + 1) % HISTORY_5M;
+        
+        // Update 15-minute history
+        history_15m_[history_index_15m_] = instant_load;
+        history_index_15m_ = (history_index_15m_ + 1) % HISTORY_15M;
 
-        float avg_load = 0;
-        for (size_t i = 0; i < HISTORY_SIZE; i++) {
-          avg_load += history_[i];
-        }
-        avg_load /= HISTORY_SIZE;
+        // Calculate and publish averages
+        float avg_1m = calculate_average(history_1m_, HISTORY_1M);
+        float avg_5m = calculate_average(history_5m_, HISTORY_5M);
+        float avg_15m = calculate_average(history_15m_, HISTORY_15M);
         
-        ESP_LOGD(TAG, "CPU Usage - Delta active: %u, Delta idle: %u, Current: %.1f%%, Average: %.1f%%", 
-                 delta_active, delta_idle, instant_load, avg_load);
+        ESP_LOGD(TAG, "Load averages: %.1f%% (1m), %.1f%% (5m), %.1f%% (15m)", 
+                 avg_1m, avg_5m, avg_15m);
         
-        this->publish_state(avg_load);
+        if (this->load_1m) this->load_1m->publish_state(avg_1m);
+        if (this->load_5m) this->load_5m->publish_state(avg_5m);
+        if (this->load_15m) this->load_15m->publish_state(avg_15m);
       }
     }
   } else {
