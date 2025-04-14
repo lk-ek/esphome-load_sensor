@@ -16,10 +16,15 @@ void LoadSensor::setup() {
   }
 }
 
+float LoadSensor::calculate_load(uint32_t idle_delta, uint32_t total_delta) {
+  if (total_delta == 0 || idle_delta > total_delta) return 0.0f;
+  return 100.0f * (1.0f - ((float)idle_delta / (float)total_delta));
+}
+
 void LoadSensor::update() {
   char buffer[512];
   vTaskGetRunTimeStats(buffer);
-  ESP_LOGD(TAG, "Runtime stats:\n%s", buffer);
+  ESP_LOGV(TAG, "Runtime stats:\n%s", buffer);  // Changed to LOGV to reduce noise
 
   uint32_t idle_ticks = 0;
   uint32_t total_ticks = 0;
@@ -38,38 +43,36 @@ void LoadSensor::update() {
     line = strtok(nullptr, "\n");
   }
 
-  if (!first_run_) {
-    uint32_t delta_total = (total_ticks >= last_total_ticks_) ? 
-                          (total_ticks - last_total_ticks_) : 
-                          (UINT32_MAX - last_total_ticks_ + total_ticks);
-                          
-    uint32_t delta_idle = (idle_ticks >= last_idle_ticks_) ? 
-                         (idle_ticks - last_idle_ticks_) : 
-                         (UINT32_MAX - last_idle_ticks_ + idle_ticks);
+  if (!first_run_ && total_ticks > last_total_ticks_) {
+    uint32_t delta_total = total_ticks - last_total_ticks_;
+    uint32_t delta_idle = idle_ticks - last_idle_ticks_;
+    
+    // Instantaneous CPU load based on current measurement interval
+    float instant_load = calculate_load(delta_idle, delta_total);
+    
+    // Add to moving average window
+    history_[history_index_] = instant_load;
+    history_index_ = (history_index_ + 1) % HISTORY_SIZE;
 
-    if (delta_total > 0) {
-      float load = 100.0f * (1.0f - ((float)delta_idle / (float)delta_total));
-      
-      // Add to moving average
-      history_[history_index_] = load;
-      history_index_ = (history_index_ + 1) % HISTORY_SIZE;
-
-      // Calculate average
-      float avg_load = 0;
-      for (size_t i = 0; i < HISTORY_SIZE; i++) {
-        avg_load += history_[i];
-      }
-      avg_load /= HISTORY_SIZE;
-
-      // Ensure load stays within 0-100%
-      if (avg_load < 0.0f) avg_load = 0.0f;
-      if (avg_load > 100.0f) avg_load = 100.0f;
-      
-      ESP_LOGD(TAG, "Delta total: %lu, Delta idle: %lu, Raw Load: %.1f%%, Avg Load: %.1f%%", 
-               delta_total, delta_idle, load, avg_load);
-      
-      this->publish_state(avg_load);
+    // Calculate weighted moving average (newer values have more weight)
+    float avg_load = 0;
+    float total_weight = 0;
+    for (size_t i = 0; i < HISTORY_SIZE; i++) {
+      size_t age = (HISTORY_SIZE + history_index_ - i) % HISTORY_SIZE;
+      float weight = HISTORY_SIZE - age;  // Newer values get higher weight
+      avg_load += history_[i] * weight;
+      total_weight += weight;
     }
+    avg_load /= total_weight;
+
+    // Ensure load stays within 0-100%
+    if (avg_load < 0.0f) avg_load = 0.0f;
+    if (avg_load > 100.0f) avg_load = 100.0f;
+    
+    ESP_LOGD(TAG, "CPU Load - Instant: %.1f%%, Moving Average: %.1f%% (over %d samples)", 
+             instant_load, avg_load, HISTORY_SIZE);
+    
+    this->publish_state(avg_load);  // We publish the smoothed value
   } else {
     first_run_ = false;
   }
