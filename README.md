@@ -38,39 +38,10 @@ Each sensor supports all standard [sensor filtering options](https://esphome.io/
 ## How it Works
 
 The load sensor works by:
-1. Monitoring FreeRTOS task statistics
-2. Calculating the ratio of active vs idle CPU time
+1. Monitoring FreeRTOS task statistics (ESP32) or main loop time (ESP8266)
+2. Calculating the ratio of active vs idle CPU time (ESP32) or relative loop delay (ESP8266)
 3. Maintaining moving averages over different time periods
 4. Publishing values as percentages (0-100%)
-
-## Requirements
-
-- ESP32 device running ESP-IDF framework
-- ESPHome with following build flags:
-  ```yaml
-  esphome:
-    platformio_options:
-      build_flags:
-        - -DconfigGENERATE_RUN_TIME_STATS=1
-        - -DconfigUSE_STATS_FORMATTING_FUNCTIONS=1
-        - -DconfigUSE_TRACE_FACILITY=1
-  ```
-
-## Framework Support
-
-### ESP-IDF Framework
-No additional configuration needed beyond the build flags listed above.
-
-### Arduino Framework
-When using Arduino framework, add these build flags:
-```yaml
-esphome:
-  platformio_options:
-    build_flags:
-      - -DconfigUSE_TRACE_FACILITY=1
-      - -DconfigGENERATE_RUN_TIME_STATS=1
-      - -DINCLUDE_uxTaskGetStackHighWaterMark=1
-```
 
 ## Platform Support
 
@@ -80,45 +51,43 @@ Uses FreeRTOS task statistics for accurate CPU load measurement.
 
 **Configuration:**
 
-1. **Add the component as an external component:**
-    ```yaml
-    external_components:
-      - source: https://github.com/lk-ek/esphome-load_sensor
-        components: [ load_sensor ]
-    ```
+```yaml
+external_components:
+  - source: https://github.com/lk-ek/esphome-load_sensor
+    components: [ load_sensor ]
 
-2. **Add the load sensor to your sensors:**
-    ```yaml
-    sensor:
-      - platform: load_sensor
-        update_interval: 10s
-        load_1m:
-          name: "ESP32 Load Average (1m)"
-        load_5m:
-          name: "ESP32 Load Average (5m)"
-        load_15m:
-          name: "ESP32 Load Average (15m)"
-    ```
+sensor:
+  - platform: load_sensor
+    update_interval: 10s
+    load_1m:
+      name: "ESP32 Load Average (1m)"
+    load_5m:
+      name: "ESP32 Load Average (5m)"
+    load_15m:
+      name: "ESP32 Load Average (15m)"
+```
 
-3. **Add required build flags for FreeRTOS stats:**
-    ```yaml
-    esphome:
-      platformio_options:
-        build_flags:
-          - -DconfigGENERATE_RUN_TIME_STATS=1
-          - -DconfigUSE_STATS_FORMATTING_FUNCTIONS=1
-          - -DconfigUSE_TRACE_FACILITY=1
-    ```
+**Required build flags for FreeRTOS stats:**
 
-4. **For Arduino framework, add:**
-    ```yaml
-    esphome:
-      platformio_options:
-        build_flags:
-          - -DconfigUSE_TRACE_FACILITY=1
-          - -DconfigGENERATE_RUN_TIME_STATS=1
-          - -DINCLUDE_uxTaskGetStackHighWaterMark=1
-    ```
+```yaml
+esphome:
+  platformio_options:
+    build_flags:
+      - -DconfigGENERATE_RUN_TIME_STATS=1
+      - -DconfigUSE_STATS_FORMATTING_FUNCTIONS=1
+      - -DconfigUSE_TRACE_FACILITY=1
+```
+
+**For Arduino framework, add:**
+
+```yaml
+esphome:
+  platformio_options:
+    build_flags:
+      - -DconfigUSE_TRACE_FACILITY=1
+      - -DconfigGENERATE_RUN_TIME_STATS=1
+      - -DINCLUDE_uxTaskGetStackHighWaterMark=1
+```
 
 ### ESP8266
 
@@ -126,35 +95,31 @@ Uses the main loop execution time as a proxy for system load.
 
 **Configuration:**
 
-1. **Add the component as an external component:**
-    ```yaml
-    external_components:
-      - source: https://github.com/lk-ek/esphome-load_sensor
-        components: [ load_sensor ]
-    ```
+```yaml
+external_components:
+  - source: https://github.com/lk-ek/esphome-load_sensor
+    components: [ load_sensor ]
 
-2. **Add the debug and load_sensor platforms to your YAML:**
-    ```yaml
-    debug:
-      update_interval: 5s
+debug:
+  update_interval: 5s
 
-    sensor:
-      - platform: debug
-        loop_time:
-          name: "Loop Time"
-      - platform: load_sensor
-        update_interval: 10s
-        baseline_loop_time: 15    # (Optional) ms, see below
-        max_loop_time: 350        # (Optional) ms, see below
-        load_1m:
-          name: "ESP8266 Load Average (1m)"
-        load_5m:
-          name: "ESP8266 Load Average (5m)"
-        load_15m:
-          name: "ESP8266 Load Average (15m)"
-    ```
+sensor:
+  - platform: debug
+    loop_time:
+      name: "Loop Time"
+  - platform: load_sensor
+    update_interval: 10s
+    baseline_loop_time: 15    # (Optional) ms, see below
+    max_loop_time: 350        # (Optional) ms, see below
+    load_1m:
+      name: "ESP8266 Load Average (1m)"
+    load_5m:
+      name: "ESP8266 Load Average (5m)"
+    load_15m:
+      name: "ESP8266 Load Average (15m)"
+```
 
-3. **No special build flags are required for ESP8266.**
+No special build flags are required for ESP8266.
 
 **Tuning `baseline_loop_time` and `max_loop_time`:**
 
