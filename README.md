@@ -144,6 +144,8 @@ Uses the main loop execution time as a proxy for system load.
           name: "Loop Time"
       - platform: load_sensor
         update_interval: 10s
+        baseline_loop_time: 15    # (Optional) ms, see below
+        max_loop_time: 350        # (Optional) ms, see below
         load_1m:
           name: "ESP8266 Load Average (1m)"
         load_5m:
@@ -154,9 +156,38 @@ Uses the main loop execution time as a proxy for system load.
 
 3. **No special build flags are required for ESP8266.**
 
+**Tuning `baseline_loop_time` and `max_loop_time`:**
+
+- `baseline_loop_time`: The loop time (in ms) when your device is idle.  
+  To measure:  
+  1. Flash your device with only the debug and load_sensor platforms enabled.
+  2. Observe the "Loop Time" sensor in the logs or Home Assistant.
+  3. Use the lowest stable value as your baseline (e.g., 15 ms).
+
+- `max_loop_time`: The loop time (in ms) that should represent 100% load.  
+  To measure:  
+  1. Add blocking code or heavy processing to simulate a busy loop.
+  2. Observe the highest loop time value in the logs.
+  3. Set this as your max (e.g., 350 ms).
+
+**Example:**
+```yaml
+sensor:
+  - platform: load_sensor
+    update_interval: 10s
+    baseline_loop_time: 15
+    max_loop_time: 350
+    load_1m:
+      name: "ESP8266 Load Average (1m)"
+    load_5m:
+      name: "ESP8266 Load Average (5m)"
+    load_15m:
+      name: "ESP8266 Load Average (15m)"
+```
+
 **Notes:**
 - The ESP8266 load is a relative indicator based on how much the main loop is delayed compared to an idle baseline.
-- For best results, calibrate the baseline and max loop time values in the C++ code for your device.
+- For best results, calibrate the baseline and max loop time values for your device.
 
 ## Example Output
 

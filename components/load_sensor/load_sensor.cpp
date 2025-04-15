@@ -196,9 +196,9 @@ void LoadSensor::update() {
 #else
   // ESP8266 specific update code using loop time
 
-  // Use a fixed baseline for idle loop time (empirically: 15ms is typical for idle with only loop_time sensor active)
-  static constexpr float BASELINE_LOOP_TIME = 15.0f;   // ms, adjust as needed
-  static constexpr float MAX_LOOP_TIME = 350.0f;      // ms, adjust as needed
+  // Use configurable or default baseline/max loop time
+  float baseline = (baseline_loop_time_ > 0) ? baseline_loop_time_ : 15.0f;
+  float max_loop = (max_loop_time_ > 0) ? max_loop_time_ : 350.0f;
 
   float current_loop_time = loop_time_ms_;
   // If an internal loop_time sensor is set, use its value
@@ -207,14 +207,14 @@ void LoadSensor::update() {
   }
 
   // Clamp current_loop_time to at least baseline
-  if (current_loop_time < BASELINE_LOOP_TIME)
-    current_loop_time = BASELINE_LOOP_TIME;
+  if (current_loop_time < baseline)
+    current_loop_time = baseline;
 
-  float instant_load = (current_loop_time - BASELINE_LOOP_TIME) / (MAX_LOOP_TIME - BASELINE_LOOP_TIME);
+  float instant_load = (current_loop_time - baseline) / (max_loop - baseline);
   instant_load = std::min(1.0f, std::max(0.0f, instant_load));
   instant_load *= 100.0f;
 
-  ESP_LOGD(TAG, "ESP8266 load (loop time): %.2f ms, Load: %.1f%%", current_loop_time, instant_load);
+  ESP_LOGD(TAG, "ESP8266 load (loop time): %.2f ms, Load: %.1f%% (baseline: %.1f ms, max: %.1f ms)", current_loop_time, instant_load, baseline, max_loop);
 
   if (!first_run_) {
     // Update histories with smoothed value

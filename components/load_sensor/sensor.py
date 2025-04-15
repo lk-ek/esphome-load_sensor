@@ -16,6 +16,8 @@ import platform
 CONF_LOAD_1M = "load_1m"
 CONF_LOAD_5M = "load_5m"
 CONF_LOAD_15M = "load_15m"
+CONF_BASELINE_LOOP_TIME = "baseline_loop_time"
+CONF_MAX_LOOP_TIME = "max_loop_time"
 
 load_sensor_ns = cg.esphome_ns.namespace("load_sensor")
 LoadSensor = load_sensor_ns.class_("LoadSensor", cg.PollingComponent)
@@ -46,6 +48,8 @@ CONFIG_SCHEMA = cv.Schema({
         state_class=STATE_CLASS_MEASUREMENT,
         entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
     ),
+    cv.Optional(CONF_BASELINE_LOOP_TIME): cv.positive_float,
+    cv.Optional(CONF_MAX_LOOP_TIME): cv.positive_float,
 }).extend(cv.polling_component_schema("10s"))
 
 async def to_code(config):
@@ -83,3 +87,9 @@ async def to_code(config):
                 loop_time_var = await cg.get_variable(loop_time_id_obj)
                 cg.add(var.set_loop_time(loop_time_var))
                 break
+
+        # Pass baseline/max loop time to C++ if set (ESP8266 only)
+        if CONF_BASELINE_LOOP_TIME in config:
+            cg.add(var.set_baseline_loop_time(config[CONF_BASELINE_LOOP_TIME]))
+        if CONF_MAX_LOOP_TIME in config:
+            cg.add(var.set_max_loop_time(config[CONF_MAX_LOOP_TIME]))

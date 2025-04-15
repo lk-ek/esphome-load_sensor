@@ -36,6 +36,8 @@ class LoadSensor : public PollingComponent, public sensor::Sensor {
   #if !USE_FREERTOS
   void set_loop_time(float ms) { loop_time_ms_ = ms; }
   void set_loop_time(sensor::Sensor *sens) { loop_time_sensor_ = sens; }
+  void set_baseline_loop_time(float ms) { baseline_loop_time_ = ms; }
+  void set_max_loop_time(float ms) { max_loop_time_ = ms; }
   #endif
 
   sensor::Sensor *load_1m{nullptr};
@@ -68,6 +70,8 @@ class LoadSensor : public PollingComponent, public sensor::Sensor {
   uint32_t gather_stats_esp8266();
   float loop_time_ms_{0}; // Store latest loop time in ms
   sensor::Sensor *loop_time_sensor_{nullptr};
+  float baseline_loop_time_{-1.0f}; // -1 means use default
+  float max_loop_time_{-1.0f};      // -1 means use default
   #endif
 
   uint32_t gather_stats();
