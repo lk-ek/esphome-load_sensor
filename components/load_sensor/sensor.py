@@ -9,6 +9,9 @@ from esphome.const import (
     STATE_CLASS_MEASUREMENT,
     ENTITY_CATEGORY_DIAGNOSTIC,
 )
+from esphome.core import CORE
+
+import platform
 
 CONF_LOAD_1M = "load_1m"
 CONF_LOAD_5M = "load_5m"
@@ -60,3 +63,23 @@ async def to_code(config):
     if CONF_LOAD_15M in config:
         sens = await sensor.new_sensor(config[CONF_LOAD_15M])
         cg.add(var.set_load_15m(sens))
+
+    # --- ESP8266: wire up debug loop_time sensor if present in YAML ---
+    if CORE.is_esp8266:
+        for s in CORE.config.get("sensor", []):
+            if (
+                isinstance(s, dict)
+                and s.get("platform") == "debug"
+                and "loop_time" in s
+            ):
+                loop_time_cfg = s["loop_time"]
+                # Try to get the id if set, otherwise use the default object name
+                if isinstance(loop_time_cfg, dict) and "id" in loop_time_cfg:
+                    loop_time_id = loop_time_cfg["id"]
+                else:
+                    loop_time_id = "loop_time"
+                # Convert to ID object using cv.use_id
+                loop_time_id_obj = cv.use_id(sensor.Sensor)(loop_time_id)
+                loop_time_var = await cg.get_variable(loop_time_id_obj)
+                cg.add(var.set_loop_time(loop_time_var))
+                break

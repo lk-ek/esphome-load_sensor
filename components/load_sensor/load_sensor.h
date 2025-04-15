@@ -15,6 +15,7 @@
 #elif defined(ESP8266)
   #include <Arduino.h>
   #include <ESP8266WiFi.h>
+  #include "esphome/components/debug/debug_component.h"  // <-- Use this path
   #define USE_FREERTOS 0
 #else
   #error "Unsupported platform"
@@ -31,6 +32,11 @@ class LoadSensor : public PollingComponent, public sensor::Sensor {
   void set_load_1m(sensor::Sensor *sens) { this->load_1m = sens; }
   void set_load_5m(sensor::Sensor *sens) { this->load_5m = sens; }
   void set_load_15m(sensor::Sensor *sens) { this->load_15m = sens; }
+
+  #if !USE_FREERTOS
+  void set_loop_time(float ms) { loop_time_ms_ = ms; }
+  void set_loop_time(sensor::Sensor *sens) { loop_time_sensor_ = sens; }
+  #endif
 
   sensor::Sensor *load_1m{nullptr};
   sensor::Sensor *load_5m{nullptr};
@@ -60,6 +66,8 @@ class LoadSensor : public PollingComponent, public sensor::Sensor {
   uint32_t last_system_time_{0};
   uint32_t last_cycles_{0};
   uint32_t gather_stats_esp8266();
+  float loop_time_ms_{0}; // Store latest loop time in ms
+  sensor::Sensor *loop_time_sensor_{nullptr};
   #endif
 
   uint32_t gather_stats();

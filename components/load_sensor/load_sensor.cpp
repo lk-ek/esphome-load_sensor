@@ -73,21 +73,55 @@ uint32_t LoadSensor::gather_stats() {
 
 #if !USE_FREERTOS
 uint32_t LoadSensor::gather_stats_esp8266() {
-  static uint32_t last_update = 0;
+  static uint32_t last_time = 0;
+  static uint32_t last_cycles = 0;
+  static uint32_t idle_cycles_per_ms = 0;
+  static bool baseline_set = false;
+  
   uint32_t now = millis();
+  uint32_t current_cycles = ESP.getCycleCount();
   
-  // Calculate time slice and CPU usage
-  uint32_t time_slice = now - last_update;
-  last_update = now;
+  if (first_run_) {
+    last_time = now;
+    last_cycles = current_cycles;
+    return 0;
+  }
   
-  // Get CPU cycles for this time slice
-  uint32_t cycles = ESP.getCycleCount() / (ESP.getCpuFreqMHz() * 1000);  // Convert to ms
+  uint32_t time_delta = now - last_time;
+  if (time_delta == 0) time_delta = 1;
   
-  // Estimate active time (empirically determined factors)
-  uint32_t active_time = time_slice * cycles / (80 * time_slice);  // Assuming 80MHz base clock
+  // Calculate cycles with overflow protection
+  uint32_t cycle_delta;
+  if (current_cycles < last_cycles) {
+    cycle_delta = (0xFFFFFFFF - last_cycles) + current_cycles;
+  } else {
+    cycle_delta = current_cycles - last_cycles;
+  }
   
-  ESP_LOGV(TAG, "ESP8266 stats - Slice: %ums, Cycles: %u, Active: %ums", 
-           time_slice, cycles, active_time);
+  // Establish baseline on second run (typical idle cycle count)
+  if (!baseline_set) {
+    idle_cycles_per_ms = cycle_delta / time_delta;
+    baseline_set = true;
+    ESP_LOGD(TAG, "ESP8266 idle cycles/ms: %u", idle_cycles_per_ms);
+    return 0;
+  }
+  
+  // Calculate cycles in excess of idle baseline
+  uint32_t total_cycles = time_delta * idle_cycles_per_ms;
+  uint32_t excess_cycles = (cycle_delta > total_cycles) ? 
+                          (cycle_delta - total_cycles) : 0;
+  
+  // Convert excess cycles to active time with 20% threshold
+  uint32_t active_time = 0;
+  if (excess_cycles > (total_cycles / 5)) {  // More than 20% above baseline
+    active_time = (excess_cycles * time_delta) / cycle_delta;
+  }
+  
+  ESP_LOGV(TAG, "ESP8266 stats - Time: %ums, Cycles: %u/%u, Active: %ums",
+           time_delta, cycle_delta, total_cycles, active_time);
+  
+  last_time = now;
+  last_cycles = current_cycles;
   
   return active_time;
 }
@@ -160,69 +194,51 @@ void LoadSensor::update() {
   last_active_ticks_ = active_ticks;
   last_idle_ticks_ = idle_ticks;
 #else
-  // ESP8266 specific update code
-  uint32_t delta_time = calculate_delta(millis(), last_system_time_);
-  uint32_t delta_active = calculate_delta(active_ticks, last_active_ticks_);
+  // ESP8266 specific update code using loop time
 
-  ESP_LOGD(TAG, "ESP8266 timing - Active: %u, Total: %u", delta_active, delta_time);
+  // Use a fixed baseline for idle loop time (empirically: 15ms is typical for idle with only loop_time sensor active)
+  static constexpr float BASELINE_LOOP_TIME = 15.0f;   // ms, adjust as needed
+  static constexpr float MAX_LOOP_TIME = 350.0f;      // ms, adjust as needed
 
-  if (!first_run_ && delta_time > 0) {
-    float instant_load = 100.0f * ((float)delta_active / (float)delta_time);
-    
-    ESP_LOGD(TAG, "ESP8266 instant load: %.1f%%", instant_load);
-    
-    if (instant_load >= 0.0f && instant_load <= 100.0f) {
-      // Update 1-minute history
-      history_1m_[history_index_1m_] = instant_load;
-      history_index_1m_ = (history_index_1m_ + 1) % HISTORY_1M;
-      
-      // Update 5-minute history
-      history_5m_[history_index_5m_] = instant_load;
-      history_index_5m_ = (history_index_5m_ + 1) % HISTORY_5M;
-      
-      // Update 15-minute history
-      history_15m_[history_index_15m_] = instant_load;
-      history_index_15m_ = (history_index_15m_ + 1) % HISTORY_15M;
-
-      // Calculate and publish averages
-      float avg_1m = calculate_average(history_1m_, HISTORY_1M);
-      float avg_5m = calculate_average(history_5m_, HISTORY_5M);
-      float avg_15m = calculate_average(history_15m_, HISTORY_15M);
-      
-      ESP_LOGD(TAG, "Load averages: %.1f%% (1m), %.1f%% (5m), %.1f%% (15m)", 
-               avg_1m, avg_5m, avg_15m);
-      
-      if (this->load_1m) this->load_1m->publish_state(avg_1m);
-      if (this->load_5m) this->load_5m->publish_state(avg_5m);
-      if (this->load_15m) this->load_15m->publish_state(avg_15m);
-    } else {
-      ESP_LOGW(TAG, "Invalid load value: %.1f%%, clamping", instant_load);
-      instant_load = (instant_load < 0.0f) ? 0.0f : 100.0f;
-    }
-  } else {
-    first_run_ = false;
+  float current_loop_time = loop_time_ms_;
+  // If an internal loop_time sensor is set, use its value
+  if (loop_time_sensor_ != nullptr && !std::isnan(loop_time_sensor_->state)) {
+    current_loop_time = loop_time_sensor_->state;
   }
 
-  last_active_ticks_ = active_ticks;
-  last_system_time_ = millis();
+  // Clamp current_loop_time to at least baseline
+  if (current_loop_time < BASELINE_LOOP_TIME)
+    current_loop_time = BASELINE_LOOP_TIME;
 
-  // ESP8266: Use sliding window for load calculation
-  static uint32_t total_active = 0;
-  static uint32_t total_time = 0;
-  const uint32_t WINDOW_SIZE = 1000;  // 1 second window
-  
-  total_active = (total_active * 9 + active_ticks) / 10;
-  total_time = (total_time * 9 + delta_time) / 10;
-  
-  if (total_time > 0) {
-    float instant_load = 100.0f * ((float)total_active / (float)total_time);
-    instant_load = std::min(100.0f, std::max(0.0f, instant_load));
+  float instant_load = (current_loop_time - BASELINE_LOOP_TIME) / (MAX_LOOP_TIME - BASELINE_LOOP_TIME);
+  instant_load = std::min(1.0f, std::max(0.0f, instant_load));
+  instant_load *= 100.0f;
+
+  ESP_LOGD(TAG, "ESP8266 load (loop time): %.2f ms, Load: %.1f%%", current_loop_time, instant_load);
+
+  if (!first_run_) {
+    // Update histories with smoothed value
+    history_1m_[history_index_1m_] = instant_load;
+    history_index_1m_ = (history_index_1m_ + 1) % HISTORY_1M;
     
-    ESP_LOGV(TAG, "ESP8266 load calculation - Active: %u, Time: %u, Load: %.1f%%",
-             total_active, total_time, instant_load);
+    history_5m_[history_index_5m_] = instant_load;
+    history_index_5m_ = (history_index_5m_ + 1) % HISTORY_5M;
     
-    // Update histories
-    // ...existing code...
+    history_15m_[history_index_15m_] = instant_load;
+    history_index_15m_ = (history_index_15m_ + 1) % HISTORY_15M;
+
+    float avg_1m = calculate_average(history_1m_, HISTORY_1M);
+    float avg_5m = calculate_average(history_5m_, HISTORY_5M);
+    float avg_15m = calculate_average(history_15m_, HISTORY_15M);
+    
+    ESP_LOGD(TAG, "Load averages: %.1f%% (1m), %.1f%% (5m), %.1f%% (15m)", 
+             avg_1m, avg_5m, avg_15m);
+    
+    if (this->load_1m) this->load_1m->publish_state(avg_1m);
+    if (this->load_5m) this->load_5m->publish_state(avg_5m);
+    if (this->load_15m) this->load_15m->publish_state(avg_15m);
+  } else {
+    first_run_ = false;
   }
 #endif
 }
